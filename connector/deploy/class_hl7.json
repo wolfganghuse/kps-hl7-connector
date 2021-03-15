@@ -1,0 +1,38 @@
+{
+  "name": "hl7connector",
+  "description": "This is a class definition of HL7 data connector.",
+  "connectorVersion": "1.0",
+  "minSvcDomainVersion": "2.3.0",
+  "type": "INGRESS",
+  "staticParameterSchema": {
+    "type": "object",
+    "properties": {
+      "image_tag": {
+        "type": "string",
+        "description": "test docker image tag to render in yaml"
+      }
+    }
+  },
+  "configParameterSchema": {
+    "type": "object",
+    "properties": {
+      "log_level": {
+        "type": "string",
+        "description": "connector docker container log level"
+      }
+    }
+  },
+  "streamParameterSchema": {
+    "type": "object",
+    "description": "Stream schema",
+  "properties": {
+    "ListenPort": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ListenPort"
+  ]
+  },
+  "yamlData": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: hl7connector\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: hl7connector\n  template:\n    metadata:\n      name: hl7connector\n      labels:\n        app: hl7connector\n    spec:\n      containers:\n        - name: hl7connector\n          image: \"wolfganghuse/hl7connector:{{ .Parameters.image_tag }}\"\n          imagePullPolicy: Always\n          ports:\n            - containerPort: 8000\n---\nkind: Service\napiVersion: v1\nmetadata:\n  name: hl7connector-svc\nspec:\n  selector:\n    app: hl7connector\n  ports:\n    - protocol: TCP\n      name: hl7connector\n      port: 9000\n      targetPort: 8000\n"
+}

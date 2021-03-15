@@ -3,22 +3,29 @@ package connector
 import (
 	"context"
 	"log"
+	"net"
+	"bufio"
+	"strings"
 
 	"github.com/nutanix/kps-connector-go-sdk/transport"
 )
 
 type streamMetadata struct {
-	// TODO: Add the relevant fields
+	ListenPort	string
 }
 
 // mapToStreamMetadata translates the stream metadata into the corresponding streamMetadata struct
 func mapToStreamMetadata(metadata map[string]interface{}) *streamMetadata {
-	// TODO: Perform the relevant conversion
-	return &streamMetadata{}
+	ListenPort := metadata["ListenPort"].(string)
+	return &streamMetadata{
+		ListenPort: ListenPort,
+	}
 }
 
 type consumer struct {
-	// TODO: Add the relevant client and fields
+	transport transport.Client
+	metadata  *streamMetadata
+	msgCh     chan string
 }
 
 // producer consumes the data from the relevant client or service and publishes them to KPS data pipelines
@@ -30,15 +37,45 @@ func newConsumer() *consumer {
 // nextMsg wraps the logic for consuming iteratively a transport.Message
 // from the relevant client or service
 func (c *consumer) nextMsg() ([]byte, error) {
-	// TODO: Add the logic for fetching the next message from the client or service
-	return []byte{}, nil
+	msg := <-c.msgCh
+	return []byte(msg), nil}
+
+func handleConnection(c net.Conn) {
+	log.Printf("Serving %s\n", c.RemoteAddr().String())
+	for {
+		netData, err := bufio.NewReader(c).ReadString('\n')
+		if err != nil {
+			log.Printf("error on NewReader")
+			return
+		}
+
+		temp := strings.TrimSpace(string(netData))
+		
+		c.Write([]byte(string(temp)))
+	}
+	c.Close()
 }
 
 // subscribe wraps the logic to connect or subscribe to the corresponding stream
 // from the relevant client or service
 func (c *consumer) subscribe(ctx context.Context, metadata *streamMetadata) error {
-	// TODO: Create the relevant subscriptions / initiate connection to the client or service
-	return nil
+	PORT := ":" + metadata.ListenPort
+	l, err := net.Listen("tcp4", PORT)
+	if err != nil {
+		log.Printf("cannot listen on port")
+		return nil
+	}
+	defer l.Close()
+
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			log.Printf("error on accepting message")
+			return nil
+		}
+		go handleConnection(c)
+	}
+	return  nil
 }
 
 // producer produces data received from KPS data pipelines to the relevant client
