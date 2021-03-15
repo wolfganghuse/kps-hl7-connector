@@ -1,9 +1,10 @@
 {
   "name": "hl7connector",
-  "connectorClassID": "cbee425d-b779-4b7c-ae16-a5c106436bd5",
+  "connectorClassID": "0efdcd0a-cd23-4382-b713-f2df1c1f014f",
   "projectId": "94ac88e4-f265-4cff-9ed8-d65890c7f8b7",
   "staticParameters": {
-    "image_tag": "develop"
+    "image_tag": "develop",
+    "StaticListenPort": 5000
   }
 }
 
