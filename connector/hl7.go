@@ -30,8 +30,9 @@ type consumer struct {
 
 // producer consumes the data from the relevant client or service and publishes them to KPS data pipelines
 func newConsumer() *consumer {
-	// TODO: Add the relevant clients and fields
-	return &consumer{}
+	return &consumer{
+		msgCh:     make(chan string ),
+	}
 }
 
 // nextMsg wraps the logic for consuming iteratively a transport.Message
@@ -40,60 +41,67 @@ func (c *consumer) nextMsg() ([]byte, error) {
 	msg := <-c.msgCh
 	return []byte(msg), nil}
 
-func handleConnection(conn net.Conn, result chan string) {
-	log.Printf("Serving %s\n", conn.RemoteAddr().String())
-	netData, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		log.Printf("error on NewReader")
-		return
+	func handleConnection(conn net.Conn) (string, error) {
+		log.Printf("Serving %s\n", conn.RemoteAddr().String())
+		netData, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			log.Printf("error on NewReader")
+			return "", err
+		}
+		_ ,err = conn.Write([]byte("Message received."))
+		if err != nil {
+			log.Printf("error on closing")
+			return "", err
+		}
+		// Send a response back to person contacting us.
+		// Close the connection when you're done with it.
+		temp := strings.TrimSpace(string(netData))
+		log.Printf(temp)
+		err = conn.Close()
+		if err != nil {
+			log.Printf("error on closing")
+			return "", err
+		}
+		log.Printf("Handle Connection closed")
+		return temp, nil
 	}
-	_ ,err_write := conn.Write([]byte("Message received."))
 	
-	if err_write != nil {
-		log.Printf("error on closing")
-	}
-	
-	// Send a response back to person contacting us.
-	// Close the connection when you're done with it.
-	temp := strings.TrimSpace(string(netData))
-	
-	result <- temp 
-	err2 := conn.Close()
-
-	if err2 != nil {
-		log.Printf("error on closing")
-	}
-	return
-}
 
 // subscribe wraps the logic to connect or subscribe to the corresponding stream
 // from the relevant client or service
 func (c *consumer) subscribe(ctx context.Context, metadata *streamMetadata) error {
 	log.Printf("Subcribe")
-	go func () {
-		PORT := ":" + metadata.ListenPort
-		l, err := net.Listen("tcp4", PORT)
+	port := ":" + metadata.ListenPort
+	go func() {
+		l, err := net.Listen("tcp4", port)
 		if err != nil {
 			log.Printf("cannot listen on port")
 			return
 		}
-		defer l.Close()
 		
 		for {
+			log.Printf("Accept")
 			con, err := l.Accept()
+			log.Printf("Accepted")
+			
 			if err != nil {
 				log.Printf("error on accepting message")
-				return
+				// wait before retry?
+				continue
 			}
-			result := make(chan string)
-			go handleConnection(con, result)
-			value := <-result
-			c.msgCh <- value
+			res, err := handleConnection(con)
+			log.Printf("after Handler")
+			log.Printf(res)
+			if err != nil {
+				// do something
+				continue
+			}
+			c.msgCh <- res
 		}
-	
 	}()
-	return  nil
+	return nil
 }
+
 
 // producer produces data received from KPS data pipelines to the relevant client
 type producer struct {
