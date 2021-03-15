@@ -40,41 +40,58 @@ func (c *consumer) nextMsg() ([]byte, error) {
 	msg := <-c.msgCh
 	return []byte(msg), nil}
 
-func handleConnection(c net.Conn) {
-	log.Printf("Serving %s\n", c.RemoteAddr().String())
-	for {
-		netData, err := bufio.NewReader(c).ReadString('\n')
-		if err != nil {
-			log.Printf("error on NewReader")
-			return
-		}
-
-		temp := strings.TrimSpace(string(netData))
-		
-		c.Write([]byte(string(temp)))
+func handleConnection(conn net.Conn, result chan string) {
+	log.Printf("Serving %s\n", conn.RemoteAddr().String())
+	netData, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		log.Printf("error on NewReader")
+		return
 	}
-	c.Close()
+	_ ,err_write := conn.Write([]byte("Message received."))
+	
+	if err_write != nil {
+		log.Printf("error on closing")
+	}
+	
+	// Send a response back to person contacting us.
+	// Close the connection when you're done with it.
+	temp := strings.TrimSpace(string(netData))
+	
+	result <- temp 
+	err2 := conn.Close()
+
+	if err2 != nil {
+		log.Printf("error on closing")
+	}
+	return
 }
 
 // subscribe wraps the logic to connect or subscribe to the corresponding stream
 // from the relevant client or service
 func (c *consumer) subscribe(ctx context.Context, metadata *streamMetadata) error {
-	PORT := ":" + metadata.ListenPort
-	l, err := net.Listen("tcp4", PORT)
-	if err != nil {
-		log.Printf("cannot listen on port")
-		return nil
-	}
-	defer l.Close()
-
-	for {
-		c, err := l.Accept()
+	log.Printf("Subcribe")
+	go func () {
+		PORT := ":" + metadata.ListenPort
+		l, err := net.Listen("tcp4", PORT)
 		if err != nil {
-			log.Printf("error on accepting message")
-			return nil
+			log.Printf("cannot listen on port")
+			return
 		}
-		go handleConnection(c)
-	}
+		defer l.Close()
+		
+		for {
+			con, err := l.Accept()
+			if err != nil {
+				log.Printf("error on accepting message")
+				return
+			}
+			result := make(chan string)
+			go handleConnection(con, result)
+			value := <-result
+			c.msgCh <- value
+		}
+	
+	}()
 	return  nil
 }
 

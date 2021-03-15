@@ -15,6 +15,8 @@ FROM golang:latest
 ARG connector_name=kps-connector-template
 RUN mkdir -p /connectors/bin
 
+RUN apt update -y
+RUN apt install netcat -y
 COPY --from=build /go/src/$connector_name/$connector_name /connectors/bin/$connector_name
 RUN chmod +x /connectors/bin/$connector_name
 

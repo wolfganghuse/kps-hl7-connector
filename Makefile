@@ -8,7 +8,7 @@ PROJECT := kps-hl7-connector
 export CONNECTOR_NAME := hl7connector
 
 # TODO: Replace with the docker image tag
-TAG=$(shell whoami)
+TAG=develop
 
 # TODO: Replace with the docker repository URI
 IMAGE_URI=wolfganghuse/$(CONNECTOR_NAME):$(TAG)
