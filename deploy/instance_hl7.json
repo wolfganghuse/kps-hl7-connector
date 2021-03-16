@@ -1,6 +1,6 @@
 {
   "name": "hl7connector",
-  "connectorClassID": "0efdcd0a-cd23-4382-b713-f2df1c1f014f",
+  "connectorClassID": "d35ac8dd-5057-407f-89c9-e06d2d0b3810",
   "projectId": "94ac88e4-f265-4cff-9ed8-d65890c7f8b7",
   "staticParameters": {
     "image_tag": "develop",
