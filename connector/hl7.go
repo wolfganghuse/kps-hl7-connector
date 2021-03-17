@@ -6,10 +6,108 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strings"
-
+	"io"
+	"bytes"
+	"github.com/pkg/errors"
 	"github.com/nutanix/kps-connector-go-sdk/transport"
 )
+
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{w: w}
+}
+
+type Writer struct {
+	w io.Writer
+}
+func (w Writer) WriteMessage(b []byte) error {
+    if _, err := w.w.Write([]byte{0x0b}); err != nil {
+      return err
+    }
+  
+    for len(b) > 0 {
+      n, err := w.w.Write(b)
+      if err != nil {
+        return err
+      }
+  
+      b = b[n:]
+    }
+  
+    if _, err := w.w.Write([]byte{0x0d, 0x1c, 0x0d}); err != nil {
+      return err
+    }
+  
+    return nil
+  }
+
+// MLLPClient reads and writes MLLP.
+type MLLPClient struct {
+	r *bufio.Reader
+	w io.Writer
+}
+const (
+	mllpStartBlock     = 0x0b
+	mllpEndBlock       = 0x1c
+	mllpCarriageReturn = 0x0d
+)
+
+// NewMLLPClient returns a new MLLPClient.
+func NewMLLPClient(c net.Conn) *MLLPClient {
+	return &MLLPClient{bufio.NewReader(c), c}
+}
+func (c *MLLPClient) Read() ([]byte, error) {
+
+	log.Printf("MLLP: reading")
+	b, err := c.r.ReadByte()
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot read the first byte of mllp message")
+	}
+	if b != mllpStartBlock {
+		return nil, errors.New("mllp: protocol error, missing Start Block")
+	}
+	payload, err := c.r.ReadBytes(mllpEndBlock)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot read mllp message")
+	}
+	// Remove the mllpEndBlock
+	payload = payload[:len(payload)-1]
+	b, err = c.r.ReadByte()
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot read the last byte of mllp message")
+	}
+	if b != mllpCarriageReturn {
+		return nil, errors.New("mllp: protocol error, missing End Carriage Return")
+	}
+	return payload, nil
+}
+
+func handleConnection(c net.Conn) (string, error){
+	fmt.Printf("Serving %s\n", c.RemoteAddr().String())
+
+	for {
+        r := NewMLLPClient(c)
+        buf , err := r.Read()
+        if err != nil {
+            log.Printf(err.Error())
+            return "", err
+        }
+
+        log.Printf("Sending ACK")
+        b := bytes.NewBuffer(nil)
+        w := NewWriter(b)
+        err = w.WriteMessage([]byte("MSH|^~\\&|......|ACK|......"))
+		if err != nil {
+			log.Printf(err.Error())
+		}
+        _ , err = c.Write(b.Bytes())
+		if err != nil {
+			log.Printf(err.Error())
+		}
+        log.Printf(string(buf))
+		return string(buf), nil
+	}
+}
+
 
 type streamMetadata struct {
 	ListenPort	string
@@ -40,82 +138,13 @@ func newConsumer() *consumer {
 // from the relevant client or service
 func (c *consumer) nextMsg() ([]byte, error) {
 	msg := <-c.msgCh
-	return []byte(msg), nil}
-
-func handleConnection(conn net.Conn) (string, error) {
-	log.Printf("Serving %s\n", conn.RemoteAddr().String())
-	netData, err := bufio.NewReader(conn).ReadString(0x10)
-	if err != nil {
-		log.Printf("error on NewReader")
-		return "", err
-	}
-	_ ,err = conn.Write([]byte("Message received."))
-	if err != nil {
-		log.Printf("error on closing")
-		return "", err
-	}
-	
-	//temp := strings.TrimSpace(string(netData))
-	temp, err := ReadMessage(netData)
-	if err != nil {
-		log.Printf("error on readmessage")
-		log.Fatal(err)
-	}
-	log.Printf(string(temp))
-	err = conn.Close()
-	if err != nil {
-		log.Printf("error on closing")
-		return "", err
-	}
-	log.Printf("Handle Connection closed")
-	return string(temp), nil
+	return []byte(msg), nil
 }
 
-// Processing Message MLLP
-func ReadMessage(message string) ([]byte, error) {
-	log.Printf("1")
-	r := bufio.NewReader(strings.NewReader(message))
-	log.Printf("2")
-	c, err := r.ReadByte()
-	log.Printf("3")
-	if err != nil {
-	  return nil, err
-	}
-    log.Printf("4")
-	if c != byte(0x0b) {
-		return nil, fmt.Errorf("invalid header found; expected 0x0b but got %02x", c)
-	  }
-	  log.Printf("5")
-	d, err := r.ReadBytes(byte(0x1c))
-	if err != nil {
-	  return nil, err
-	}
-	log.Printf("6")
-	if len(d) < 2 {
-	  return nil, fmt.Errorf("content including boundary should be at least two bytes long; instead was %02x", len(d))
-	}
-	log.Printf("7")
-	if d[len(d)-2] != 0x0d {
-	  return nil, fmt.Errorf("content should end with 0x0d; instead was %02x", d[len(d)-2])
-	}
-	log.Printf("8")
-	t, err := r.ReadByte()
-	if err != nil {
-	  return nil, err
-	}
-	log.Printf("9")
-	if t != byte(0x0d) {
-	  return nil, fmt.Errorf("invalid trailer found; expected 0x0d but got %02x", t)
-	}
-	log.Printf("10")
-	log.Printf(string(d[0 : len(d)-2]))
-	return d[0 : len(d)-2], nil
-  }
-  
 // subscribe wraps the logic to connect or subscribe to the corresponding stream
 // from the relevant client or service
 func (c *consumer) subscribe(ctx context.Context, metadata *streamMetadata) error {
-	log.Printf("Subcribe")
+	log.Printf("Subcribed")
 	port := ":" + metadata.ListenPort
 	go func() {
 		l, err := net.Listen("tcp4", port)
@@ -125,25 +154,28 @@ func (c *consumer) subscribe(ctx context.Context, metadata *streamMetadata) erro
 		}
 		
 		for {
-			log.Printf("Accept")
+			log.Printf("waiting...")
 			con, err := l.Accept()
-			log.Printf("Accepted")
 			
 			if err != nil {
 				log.Printf("error on accepting message")
 				// wait before retry?
 				continue
 			}
-			res, err := handleConnection(con)
-			log.Printf("after Handler")
-			log.Printf(res)
-			if err != nil {
-				// do something
-				continue
+			for {
+				res, err := handleConnection(con)
+				log.Printf("after Handler")
+				if err != nil {
+					// do something
+					log.Printf("after handler error")
+					break
+				}
+				c.msgCh <- res
+				log.Printf("after channel")
 			}
-			c.msgCh <- res
 		}
 	}()
+	log.Printf("exit")
 	return nil
 }
 
